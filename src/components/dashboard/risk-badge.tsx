@@ -9,11 +9,7 @@ interface RiskBadgeProps {
   className?: string;
 }
 
-/**
- * Risk indicator that never relies on color alone — it always carries a text
- * label ("Low", "Medium", "High", "Critical") and an optional numeric score,
- * so it reads correctly for color-blind users.
- */
+/** Risk indicator — never relies on color alone; always carries a text label and optional numeric score. */
 export function RiskBadge({ score, showScore = false, className }: RiskBadgeProps) {
   const { label, variant } = riskLevel(score);
   return (
@@ -44,8 +40,7 @@ const toneFill: Record<Exclude<ProgressBarProps['tone'], undefined | 'auto'>, st
 /** Slim utilization bar used for budgets and quota displays. */
 export function ProgressBar({ value, className, tone = 'auto', label }: ProgressBarProps) {
   const pct = Math.max(0, Math.min(100, value));
-  const resolved =
-    tone === 'auto' ? (pct >= 90 ? 'danger' : pct >= 75 ? 'warning' : 'gold') : tone;
+  const resolved = tone === 'auto' ? (pct >= 90 ? 'danger' : pct >= 75 ? 'warning' : 'gold') : tone;
 
   return (
     <div

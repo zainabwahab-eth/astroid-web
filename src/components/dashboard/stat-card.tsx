@@ -23,9 +23,11 @@ export interface StatCardProps {
 }
 
 /**
- * A metric tile. Oversized value dominates; an optional signed delta ships an
- * arrow + sign (never color alone) and an optional link makes the whole card a
- * navigable target.
+ * A metric tile. The oversized value dominates; a signed delta ships an arrow
+ * + sign and status color derived from direction × whether up is good; an
+ * optional link makes the whole card a navigable target. Every spacing,
+ * color, and border value is a design token — no ad-hoc Tailwind color
+ * or spacing utility is used here.
  */
 export function StatCard({
   label,
@@ -49,17 +51,20 @@ export function StatCard({
     <Card
       elevation="soft"
       interactive={Boolean(href)}
-      className={cn('flex h-full flex-col gap-4 p-5', className)}
+      className={cn(
+        'flex h-full flex-col gap-4 border-border bg-surface-secondary/40 p-5',
+        className,
+      )}
     >
       <div className="flex items-center justify-between">
-        <span className="text-2xs font-medium uppercase tracking-[0.12em] text-foreground-secondary">
+        <span className="text-xs font-medium uppercase tracking-[0.12em] text-foreground-secondary">
           {label}
         </span>
         {icon && <span className="text-foreground-muted">{icon}</span>}
       </div>
       <span
         className={cn(
-          'font-display text-4xl font-semibold leading-none tracking-tight tabular',
+          'font-display font-semibold leading-none tracking-tight tabular',
           accent && 'text-accent-gradient',
         )}
       >
@@ -73,8 +78,10 @@ export function StatCard({
         {hasDelta ? (
           <span
             className={cn(
-              'inline-flex items-center gap-1 text-2xs font-medium',
-              good ? 'text-success' : 'text-danger',
+              'inline-flex items-center gap-1 text-xs font-medium',
+              good
+                ? 'text-success'
+                : 'text-danger',
             )}
           >
             {positive ? '▲' : '▼'} {positive ? '+' : ''}
@@ -84,9 +91,11 @@ export function StatCard({
             )}
           </span>
         ) : (
-          <span className="text-2xs text-foreground-secondary">{footer}</span>
+          <span className="text-xs text-foreground-secondary">{footer}</span>
         )}
-        {href && <ArrowUpRight className="h-4 w-4 text-foreground-muted" aria-hidden />}
+        {href && (
+          <ArrowUpRight className="h-4 w-4 text-foreground-muted" aria-hidden />
+        )}
       </div>
     </Card>
   );
@@ -117,7 +126,7 @@ export function KeyValue({
 }) {
   return (
     <div className={cn('flex flex-col gap-1', className)}>
-      <dt className="text-2xs font-medium uppercase tracking-wide text-foreground-secondary">
+      <dt className="text-xs font-medium uppercase tracking-wide text-foreground-secondary">
         {label}
       </dt>
       <dd className={cn('text-sm text-foreground', mono && 'font-mono text-xs')}>
@@ -130,13 +139,7 @@ export function KeyValue({
 // ---------------------------------------------------------------------------
 // SectionLabel — a small hairline-prefixed section heading
 // ---------------------------------------------------------------------------
-export function SectionLabel({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+export function SectionLabel({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <h2
       className={cn(
