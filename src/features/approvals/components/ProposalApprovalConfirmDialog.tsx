@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { AlertTriangle, ShieldCheck, Wallet } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
@@ -46,14 +46,21 @@ export function ProposalApprovalConfirmDialog({
   xdr,
   className,
 }: ProposalApprovalConfirmDialogProps) {
-  const { approve, reject, decision, isProcessing } = useProposalApproval(proposal);
+  const { approve, reject, requestChanges, decision, error, isProcessing } =
+    useProposalApproval(proposal);
   const { isConnected, signTransaction } = useStellarWallet();
   const feeEstimate = useStellarFeeEstimate();
 
   const [isSigning, setIsSigning] = useState(false);
   const [signError, setSignError] = useState<string | null>(null);
+  // Synchronous double-submit guard: `busy` comes from React state, so two
+  // clicks in the same tick would both observe `false` before the re-render.
+  const submitGuardRef = useRef(false);
+  // Safe default focus target for a destructive confirmation.
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
 
   const isApprove = action === 'approved';
+  const isRequestChanges = action === 'changes_requested';
   const busy = isProcessing || isSigning;
 
   // Reset transient signing state whenever the dialog is (re)opened.
@@ -65,52 +72,57 @@ export function ProposalApprovalConfirmDialog({
   }, [open, action]);
 
   const handleConfirm = async () => {
-    if (!action || busy) return;
+    if (!action || busy || submitGuardRef.current) return;
+    submitGuardRef.current = true;
     setSignError(null);
 
-    // Optional wallet signature round-trip before the decision is recorded.
-    if (isApprove && xdr) {
-      if (!isConnected) {
-        const message =
-          'Freighter wallet is not connected. Reconnect the extension and try again.';
-        setSignError(message);
-        toast.error(message);
-        return;
-      }
-      setIsSigning(true);
-      try {
-        const signedXdr = await signTransaction(xdr);
-        if (!signedXdr) {
-          // Hook already surfaced its own error; treat as a cancelled signing.
-          const message = 'Signing was cancelled or failed in the wallet.';
+    try {
+      // Optional wallet signature round-trip before the decision is recorded.
+      if (isApprove && xdr) {
+        if (!isConnected) {
+          const message =
+            'Freighter wallet is not connected. Reconnect the extension and try again.';
           setSignError(message);
           toast.error(message);
-          setIsSigning(false);
           return;
         }
-        toast.success('Transaction signed with Freighter');
-      } catch (error) {
-        const message =
-          error instanceof Error && error.message
-            ? error.message
-            : 'Wallet signing failed. The decision was not recorded.';
-        setSignError(message);
-        toast.error(message);
-        setIsSigning(false);
-        return;
+        setIsSigning(true);
+        try {
+          const signedXdr = await signTransaction(xdr);
+          if (!signedXdr) {
+            // Hook already surfaced its own error; treat as a cancelled signing.
+            const message = 'Signing was cancelled or failed in the wallet.';
+            setSignError(message);
+            toast.error(message);
+            return;
+          }
+          toast.success('Transaction signed with Freighter');
+        } catch (error) {
+          const message =
+            error instanceof Error && error.message
+              ? error.message
+              : 'Wallet signing failed. The decision was not recorded.';
+          setSignError(message);
+          toast.error(message);
+          return;
+        } finally {
+          setIsSigning(false);
+        }
       }
-      setIsSigning(false);
-    }
 
-    try {
+      let succeeded = false;
       if (isApprove) {
-        await approve();
+        succeeded = await approve();
+      } else if (isRequestChanges) {
+        succeeded = await requestChanges();
       } else {
-        await reject();
+        succeeded = await reject();
       }
-      onClose();
+      if (succeeded) onClose();
     } catch {
       // Decision failures already toast inside the approval hook.
+    } finally {
+      submitGuardRef.current = false;
     }
   };
 
@@ -125,43 +137,65 @@ export function ProposalApprovalConfirmDialog({
     <Dialog
       open={open && action !== null}
       onClose={handleCancel}
-      title={isApprove ? 'Approve this proposal?' : 'Reject this proposal?'}
+      title={
+        isApprove
+          ? 'Approve this proposal?'
+          : isRequestChanges
+            ? 'Request changes?'
+            : 'Reject this proposal?'
+      }
       description={
         isApprove
           ? 'Review the details below. Approving records your weight toward the required quorum.'
-          : 'Review the details below. Rejecting declines this agent-proposed transaction.'
+          : isRequestChanges
+            ? 'Return this proposal to its author with a request for revisions.'
+            : 'Review the details below. Rejecting declines this agent-proposed transaction.'
       }
       size="md"
       className={className}
+      initialFocusRef={cancelButtonRef}
       footer={
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-end">
           <Button
+            ref={cancelButtonRef}
             type="button"
             variant="outline"
             onClick={handleCancel}
             disabled={busy}
-            aria-label={isApprove ? 'Cancel approval' : 'Cancel rejection'}
+            aria-label={
+              isApprove
+                ? 'Cancel approval'
+                : isRequestChanges
+                  ? 'Cancel request changes'
+                  : 'Cancel rejection'
+            }
           >
             Cancel
           </Button>
           <Button
             type="button"
-            variant={isApprove ? 'gold' : 'danger'}
+            variant={isApprove ? 'gold' : isRequestChanges ? 'secondary' : 'danger'}
             onClick={() => void handleConfirm()}
             loading={busy}
             aria-label={
               isApprove
                 ? `Confirm approval of ${proposal.title}`
-                : `Confirm rejection of ${proposal.title}`
+                : isRequestChanges
+                  ? `Request changes to ${proposal.title}`
+                  : `Confirm rejection of ${proposal.title}`
             }
             aria-describedby="proposal-confirm-risk-note"
           >
-            {isApprove ? 'Confirm approval' : 'Confirm rejection'}
+            {isApprove
+              ? 'Confirm approval'
+              : isRequestChanges
+                ? 'Request changes'
+                : 'Confirm rejection'}
           </Button>
         </div>
       }
     >
-      <div className="space-y-4">
+      <div className="space-y-4" aria-busy={busy}>
         {/* Screen reader context ------------------------------------------- */}
         <p role="status" aria-live="polite" className="sr-only">
           {busy
@@ -263,9 +297,9 @@ export function ProposalApprovalConfirmDialog({
         )}
 
         {/* Outcome / error states ------------------------------------------- */}
-        {signError && (
+        {(signError || error) && (
           <p role="alert" className="text-xs font-medium text-danger">
-            {signError}
+            {signError ?? error}
           </p>
         )}
         {decision && (
